@@ -16,8 +16,8 @@ struct TargetTime(DateTime<Local>);
 #[derive(Resource)]
 struct MandelState {
     image: Handle<Image>,
-    zoom: f32,    // smaller => closer
-    center: Vec2, // complex plane center
+    zoom: f32,      // smaller => closer
+    center: Vec2,   // complex plane center
     fps_timer: Timer,
 }
 
@@ -29,25 +29,20 @@ struct CountdownText;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Standby - Mandelbrot + Countdown".to_string(),
-                resolution: (1280.0, 720.0).into(),
-                resizable: true,
+        .add_plugins(
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Standby - Mandelbrot + Countdown".to_string(),
+                    resolution: (1280.0, 720.0).into(),
+                    resizable: true,
+                    ..default()
+                }),
                 ..default()
             }),
-            ..default()
-        }))
+        )
         .insert_resource(ClearColor(Color::BLACK))
         .add_systems(Startup, (setup_camera, setup_mandelbrot, setup_text))
-        .add_systems(
-            Update,
-            (
-                update_mandelbrot,
-                fit_sprite_to_window,
-                update_countdown_text,
-            ),
-        )
+        .add_systems(Update, (update_mandelbrot, fit_sprite_to_window, update_countdown_text))
         .run();
 }
 
@@ -81,16 +76,17 @@ fn setup_mandelbrot(
     let w = window.width();
     let h = window.height();
 
-    commands.spawn((
-        Sprite {
-            image: image_handle.clone(),
-            custom_size: Some(Vec2::new(w, h)),
-            ..default()
-        },
-        Transform::default(),
-        Visibility::Visible,
-        MandelSprite,
-    ));
+    commands
+        .spawn((
+            Sprite {
+                image: image_handle.clone(),
+                custom_size: Some(Vec2::new(w, h)),
+                ..default()
+            },
+            Transform::default(),
+            Visibility::Visible,
+            MandelSprite,
+        ));
 
     commands.insert_resource(MandelState {
         image: image_handle,
@@ -106,16 +102,17 @@ fn setup_mandelbrot(
 }
 
 fn mandelbrot_color(iter: u32, max_iter: u32) -> [u8; 4] {
+    // Keep the interior perfectly black; avoid any reddish palette for exterior.
+    if iter >= max_iter {
+        return [0, 0, 0, 0xFF];
+    }
+
     let t = iter as f32 / max_iter as f32;
-    let r = (0.5 + 0.5 * (6.2831 * (t + 0.00)).cos()).powf(1.2);
-    let g = (0.5 + 0.5 * (6.2831 * (t + 0.33)).cos()).powf(1.2);
-    let b = (0.5 + 0.5 * (6.2831 * (t + 0.67)).cos()).powf(1.2);
-    [
-        (r * 255.0) as u8,
-        (g * 255.0) as u8,
-        (b * 255.0) as u8,
-        0xFF,
-    ]
+    // Dark, space-like palette biased toward cyan/blue (no red component)
+    let intensity = t.powf(0.35);
+    let g = (intensity * 180.0) as u8;
+    let b = (intensity * 255.0) as u8;
+    [0, g, b, 0xFF]
 }
 
 fn update_mandelbrot(
@@ -133,9 +130,7 @@ fn update_mandelbrot(
     state.center.x = -0.5 + 0.2 * (t * 0.10).sin();
     state.center.y = 0.0 + 0.2 * (t * 0.13).cos();
 
-    let Some(image) = images.get_mut(&state.image) else {
-        return;
-    };
+    let Some(image) = images.get_mut(&state.image) else { return; };
 
     let width = image.texture_descriptor.size.width as i32;
     let height = image.texture_descriptor.size.height as i32;
@@ -145,9 +140,7 @@ fn update_mandelbrot(
 
     let max_iter: u32 = 80;
 
-    let Some(ref mut data) = image.data else {
-        return;
-    };
+    let Some(ref mut data) = image.data else { return; };
 
     for y in 0..height {
         for x in 0..width {
@@ -194,14 +187,8 @@ fn fit_sprite_to_window(
 fn setup_text(mut commands: Commands) {
     commands.spawn((
         Text::new("--:--:--"),
-        TextFont {
-            font_size: 140.0,
-            ..default()
-        },
-        TextLayout {
-            justify: JustifyText::Center,
-            ..default()
-        },
+        TextFont { font_size: 140.0, ..default() },
+        TextLayout { justify: JustifyText::Center, ..default() },
         TextColor(Color::WHITE),
         Transform::from_translation(Vec3::new(0.0, 0.0, 10.0)),
         Visibility::Visible,
@@ -221,10 +208,7 @@ fn update_countdown_text(
         let hours = total_secs / 3600;
         let minutes = (total_secs % 3600) / 60;
         let seconds = total_secs % 60;
-        (
-            format!("{:02}:{:02}:{:02}", hours, minutes, seconds),
-            Color::WHITE,
-        )
+        (format!("{:02}:{:02}:{:02}", hours, minutes, seconds), Color::WHITE)
     } else {
         ("LIVE".to_string(), Color::srgb_u8(0, 255, 128))
     };

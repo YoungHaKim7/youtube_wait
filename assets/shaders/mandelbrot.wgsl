@@ -40,7 +40,9 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let t = f32(i) / f32(max_iter);
-    // Smooth coloring
-    let color = vec3<f32>(0.5 + 0.5*cos(6.2831*(vec3<f32>(0.0, 0.33, 0.67) + t)), t, t*t);
-    return vec4<f32>(color, 1.0);
+    // Space-dark palette with no red; interior stays black
+    let intensity = pow(t, 0.35);
+    let g = intensity * 0.7;  // up to ~0.7
+    let b = intensity * 1.0;  // up to 1.0
+    return vec4<f32>(0.0, g, b, 1.0);
 }
