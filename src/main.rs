@@ -156,7 +156,7 @@ fn setup_clock(mut commands: Commands, target: Res<TargetTime>) {
             .and_then(|nd| nd.and_local_timezone(Local).single())
             .expect("Invalid START_TIME_STR format; expected yyyy-mm-ddTHH:MM:SS in local time")
     } else {
-        target.0 - Duration::minutes(5)
+        target.0 - Duration::minutes(10)
     };
 
     commands.insert_resource(AppClock {
