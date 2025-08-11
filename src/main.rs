@@ -16,9 +16,16 @@ struct TargetTime(DateTime<Local>);
 #[derive(Resource)]
 struct MandelState {
     image: Handle<Image>,
-    zoom: f32,      // smaller => closer
+    // Zoom handling: smaller => closer (exponential over a cycle)
+    zoom: f32,
     center: Vec2,   // complex plane center
     fps_timer: Timer,
+    // New: 90s zoom cycles across interesting targets
+    start_zoom: f32,
+    min_zoom: f32,
+    cycle_timer: Timer,
+    targets: Vec<Vec2>,
+    target_index: usize,
 }
 
 #[derive(Component)]
@@ -88,11 +95,25 @@ fn setup_mandelbrot(
             MandelSprite,
         ));
 
+    // Curated set of visually rich target centers near the boundary
+    let targets = vec![
+        Vec2::new(-0.743_643_887_037_151, 0.131_825_904_205_33), // Seahorse valley
+        Vec2::new(-1.250_66, 0.020_12),                           // Antenna region
+        Vec2::new(0.001_643_721_971_153, 0.822_467_633_298_876), // Spiral filaments
+        Vec2::new(-0.101_096_363_845, 0.956_286_510_809),        // Boundary filigree
+        Vec2::new(-0.8, 0.156),                                   // Mini-set chain
+    ];
+
     commands.insert_resource(MandelState {
         image: image_handle,
+        start_zoom: 3.0,
+        min_zoom: 0.000_6, // stop before precision/interior dominates
         zoom: 3.0,
-        center: Vec2::new(-0.5, 0.0),
+        center: targets[0],
         fps_timer: Timer::from_seconds(1.0 / 20.0, TimerMode::Repeating), // ~20 FPS updates
+        cycle_timer: Timer::from_seconds(90.0, TimerMode::Repeating),     // 90s continuous zoom cycles
+        targets,
+        target_index: 0,
     });
 
     let parsed_local = Local
@@ -125,10 +146,23 @@ fn update_mandelbrot(
         return;
     }
 
-    state.zoom = (state.zoom * 0.995).max(0.0005);
+    // Drive 90s zoom cycle and advance target when a cycle completes
+    let cycle_finished = state.cycle_timer.tick(time.delta()).just_finished();
+    if cycle_finished {
+        state.target_index = (state.target_index + 1) % state.targets.len();
+    }
+
+    // Smooth exponential zoom: start_zoom -> min_zoom over the cycle duration
+    let cycle_elapsed = state.cycle_timer.elapsed().as_secs_f32();
+    let cycle_total = state.cycle_timer.duration().as_secs_f32();
+    let progress = (cycle_elapsed / cycle_total).clamp(0.0, 1.0);
+    state.zoom = state.start_zoom * (state.min_zoom / state.start_zoom).powf(progress);
+
+    // Keep near boundary with a subtle orbit around the current target
+    let base = state.targets[state.target_index];
     let t = time.elapsed_secs();
-    state.center.x = -0.5 + 0.2 * (t * 0.10).sin();
-    state.center.y = 0.0 + 0.2 * (t * 0.13).cos();
+    let orbit = Vec2::new((t * 0.11).sin(), (t * 0.13).cos()) * (0.35 * state.zoom);
+    state.center = base + orbit;
 
     let Some(image) = images.get_mut(&state.image) else { return; };
 
@@ -138,9 +172,13 @@ fn update_mandelbrot(
     let window = windows.single().expect("primary window");
     let aspect = window.width() / window.height();
 
-    let max_iter: u32 = 80;
+    // Increase iterations as we zoom in to retain edge detail
+    let zoom_factor = (state.start_zoom / state.zoom).max(1.0);
+    let dynamic_iters = 80.0 + 20.0 * zoom_factor.log2();
+    let max_iter: u32 = dynamic_iters.clamp(80.0, 1024.0) as u32;
 
     let Some(ref mut data) = image.data else { return; };
+    let mut interior_pixels: u32 = 0;
 
     for y in 0..height {
         for x in 0..width {
@@ -169,7 +207,20 @@ fn update_mandelbrot(
             let color = mandelbrot_color(it, max_iter);
             let idx = ((y as u32 * MANDEL_WIDTH + x as u32) * 4) as usize;
             data[idx..idx + 4].copy_from_slice(&color);
+
+            if it >= max_iter {
+                interior_pixels += 1;
+            }
         }
+    }
+
+    // If nearly all pixels are interior (black), advance cycle early to avoid a black-only screen
+    let total_pixels = (width as u32 * height as u32) as u32;
+    if interior_pixels as f32 / total_pixels as f32 > 0.985 {
+        state.target_index = (state.target_index + 1) % state.targets.len();
+        state.cycle_timer.reset();
+        state.zoom = state.start_zoom;
+        state.center = state.targets[state.target_index];
     }
 }
 
