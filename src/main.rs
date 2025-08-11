@@ -1,10 +1,14 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use chrono::{DateTime, Local, TimeZone};
+use chrono::{DateTime, Duration, Local, NaiveDateTime};
 
 // Target broadcast time (local time)
 const TARGET_TIME_STR: &str = "2025-12-31T23:59:59"; // yyyy-mm-ddTHH:MM:SS
+
+// Optional: fixed app start time to control the clock deterministically
+// If None, the app clock will start 5 minutes before TARGET_TIME
+const START_TIME_STR: Option<&str> = None;
 
 // Offscreen Mandelbrot render size
 const MANDEL_WIDTH: u32 = 640;
@@ -12,6 +16,13 @@ const MANDEL_HEIGHT: u32 = 360;
 
 #[derive(Resource)]
 struct TargetTime(DateTime<Local>);
+
+#[derive(Resource)]
+struct AppClock {
+    current: DateTime<Local>,
+    speed: f32,   // 1.0 = real-time, 2.0 = 2x faster, etc.
+    paused: bool, // when true, the clock does not advance
+}
 
 #[derive(Resource)]
 struct MandelState {
@@ -46,13 +57,21 @@ fn main() {
             ..default()
         }))
         .insert_resource(ClearColor(Color::BLACK))
-        .add_systems(Startup, (setup_camera, setup_mandelbrot, setup_text))
+        .add_systems(
+            Startup,
+            (
+                (setup_target_time, setup_clock).chain(), // ensure clock sees target
+                setup_camera,
+                setup_mandelbrot,
+                setup_text,
+            ),
+        )
         .add_systems(
             Update,
             (
                 update_mandelbrot,
                 fit_sprite_to_window,
-                update_countdown_text,
+                (advance_clock, update_countdown_text).chain(),
             ),
         )
         .run();
@@ -115,15 +134,36 @@ fn setup_mandelbrot(
         zoom: 3.0,
         center: targets[0],
         fps_timer: Timer::from_seconds(1.0 / 20.0, TimerMode::Repeating), // ~20 FPS updates
-        cycle_timer: Timer::from_seconds(90.0, TimerMode::Repeating), // 90s continuous zoom cycles
+        cycle_timer: Timer::from_seconds(190.0, TimerMode::Repeating), // 90s continuous zoom cycles
         targets,
         target_index: 0,
     });
+}
 
-    let parsed_local = Local
-        .datetime_from_str(TARGET_TIME_STR, "%Y-%m-%dT%H:%M:%S")
-        .unwrap_or_else(|_| Local::now());
+fn setup_target_time(mut commands: Commands) {
+    let parsed_local = NaiveDateTime::parse_from_str(TARGET_TIME_STR, "%Y-%m-%dT%H:%M:%S")
+        .ok()
+        .and_then(|nd| nd.and_local_timezone(Local).single())
+        .expect("Invalid TARGET_TIME_STR format; expected yyyy-mm-ddTHH:MM:SS in local time");
     commands.insert_resource(TargetTime(parsed_local));
+}
+
+fn setup_clock(mut commands: Commands, target: Res<TargetTime>) {
+    // Determine initial clock time from START_TIME_STR or 5 minutes before target
+    let start_dt = if let Some(start_str) = START_TIME_STR {
+        NaiveDateTime::parse_from_str(start_str, "%Y-%m-%dT%H:%M:%S")
+            .ok()
+            .and_then(|nd| nd.and_local_timezone(Local).single())
+            .expect("Invalid START_TIME_STR format; expected yyyy-mm-ddTHH:MM:SS in local time")
+    } else {
+        target.0 - Duration::minutes(5)
+    };
+
+    commands.insert_resource(AppClock {
+        current: start_dt,
+        speed: 1.0,
+        paused: false,
+    });
 }
 
 fn mandelbrot_color(iter: u32, max_iter: u32) -> [u8; 4] {
@@ -237,7 +277,7 @@ fn fit_sprite_to_window(
     mut sprites: Query<(&mut Sprite, &mut Transform), With<MandelSprite>>,
 ) {
     let window = windows.single().expect("primary window");
-    if let Ok((mut sprite, mut transform)) = sprites.get_single_mut() {
+    if let Ok((mut sprite, mut transform)) = sprites.single_mut() {
         sprite.custom_size = Some(Vec2::new(window.width(), window.height()));
         transform.translation.z = 0.0;
     }
@@ -263,14 +303,13 @@ fn setup_text(mut commands: Commands) {
 
 fn update_countdown_text(
     target: Res<TargetTime>,
+    clock: Res<AppClock>,
     mut texts: Query<(&mut Text, &mut TextColor, &mut TextFont), With<CountdownText>>,
 ) {
-    let now = Local::now();
-    let remaining = target.0 - now;
+    let remaining = target.0 - clock.current;
     let total_secs = remaining.num_seconds();
 
     let (text_value, color) = if total_secs >= 0 {
-        let hours = total_secs / 3600;
         let minutes = (total_secs % 3600) / 60;
         let seconds = total_secs % 60;
         (
@@ -281,9 +320,22 @@ fn update_countdown_text(
         ("LIVE".to_string(), Color::srgb_u8(0, 255, 128))
     };
 
-    if let Ok((mut text, mut text_color, mut font)) = texts.get_single_mut() {
+    if let Ok((mut text, mut text_color, mut font)) = texts.single_mut() {
         *text = Text::new(text_value);
         *text_color = TextColor(color);
         font.font_size = 140.0;
+    }
+}
+
+fn advance_clock(time: Res<Time>, mut clock: ResMut<AppClock>) {
+    if clock.paused || clock.speed == 0.0 {
+        return;
+    }
+
+    let delta_secs = time.delta_secs_f64() * clock.speed as f64;
+    // Use microseconds for decent resolution; avoid float nan/inf
+    if delta_secs.is_finite() {
+        let micros = (delta_secs * 1_000_000.0) as i64;
+        clock.current = clock.current + Duration::microseconds(micros);
     }
 }
