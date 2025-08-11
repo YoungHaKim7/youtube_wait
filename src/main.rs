@@ -18,7 +18,7 @@ struct MandelState {
     image: Handle<Image>,
     // Zoom handling: smaller => closer (exponential over a cycle)
     zoom: f32,
-    center: Vec2,   // complex plane center
+    center: Vec2, // complex plane center
     fps_timer: Timer,
     // New: 90s zoom cycles across interesting targets
     start_zoom: f32,
@@ -36,20 +36,25 @@ struct CountdownText;
 
 fn main() {
     App::new()
-        .add_plugins(
-            DefaultPlugins.set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Standby - Mandelbrot + Countdown".to_string(),
-                    resolution: (1280.0, 720.0).into(),
-                    resizable: true,
-                    ..default()
-                }),
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Standby - Mandelbrot + Countdown".to_string(),
+                resolution: (1280.0, 720.0).into(),
+                resizable: true,
                 ..default()
             }),
-        )
+            ..default()
+        }))
         .insert_resource(ClearColor(Color::BLACK))
         .add_systems(Startup, (setup_camera, setup_mandelbrot, setup_text))
-        .add_systems(Update, (update_mandelbrot, fit_sprite_to_window, update_countdown_text))
+        .add_systems(
+            Update,
+            (
+                update_mandelbrot,
+                fit_sprite_to_window,
+                update_countdown_text,
+            ),
+        )
         .run();
 }
 
@@ -83,35 +88,34 @@ fn setup_mandelbrot(
     let w = window.width();
     let h = window.height();
 
-    commands
-        .spawn((
-            Sprite {
-                image: image_handle.clone(),
-                custom_size: Some(Vec2::new(w, h)),
-                ..default()
-            },
-            Transform::default(),
-            Visibility::Visible,
-            MandelSprite,
-        ));
+    commands.spawn((
+        Sprite {
+            image: image_handle.clone(),
+            custom_size: Some(Vec2::new(w, h)),
+            ..default()
+        },
+        Transform::default(),
+        Visibility::Visible,
+        MandelSprite,
+    ));
 
     // Curated set of visually rich target centers near the boundary
     let targets = vec![
         Vec2::new(-0.743_643_887_037_151, 0.131_825_904_205_33), // Seahorse valley
-        Vec2::new(-1.250_66, 0.020_12),                           // Antenna region
+        Vec2::new(-1.250_66, 0.020_12),                          // Antenna region
         Vec2::new(0.001_643_721_971_153, 0.822_467_633_298_876), // Spiral filaments
         Vec2::new(-0.101_096_363_845, 0.956_286_510_809),        // Boundary filigree
-        Vec2::new(-0.8, 0.156),                                   // Mini-set chain
+        Vec2::new(-0.8, 0.156),                                  // Mini-set chain
     ];
 
     commands.insert_resource(MandelState {
         image: image_handle,
-        start_zoom: 3.0,
+        start_zoom: 1.0,
         min_zoom: 0.000_6, // stop before precision/interior dominates
         zoom: 3.0,
         center: targets[0],
         fps_timer: Timer::from_seconds(1.0 / 20.0, TimerMode::Repeating), // ~20 FPS updates
-        cycle_timer: Timer::from_seconds(90.0, TimerMode::Repeating),     // 90s continuous zoom cycles
+        cycle_timer: Timer::from_seconds(90.0, TimerMode::Repeating), // 90s continuous zoom cycles
         targets,
         target_index: 0,
     });
@@ -164,7 +168,9 @@ fn update_mandelbrot(
     let orbit = Vec2::new((t * 0.11).sin(), (t * 0.13).cos()) * (0.35 * state.zoom);
     state.center = base + orbit;
 
-    let Some(image) = images.get_mut(&state.image) else { return; };
+    let Some(image) = images.get_mut(&state.image) else {
+        return;
+    };
 
     let width = image.texture_descriptor.size.width as i32;
     let height = image.texture_descriptor.size.height as i32;
@@ -177,7 +183,9 @@ fn update_mandelbrot(
     let dynamic_iters = 80.0 + 20.0 * zoom_factor.log2();
     let max_iter: u32 = dynamic_iters.clamp(80.0, 1024.0) as u32;
 
-    let Some(ref mut data) = image.data else { return; };
+    let Some(ref mut data) = image.data else {
+        return;
+    };
     let mut interior_pixels: u32 = 0;
 
     for y in 0..height {
@@ -238,8 +246,14 @@ fn fit_sprite_to_window(
 fn setup_text(mut commands: Commands) {
     commands.spawn((
         Text::new("--:--:--"),
-        TextFont { font_size: 140.0, ..default() },
-        TextLayout { justify: JustifyText::Center, ..default() },
+        TextFont {
+            font_size: 140.0,
+            ..default()
+        },
+        TextLayout {
+            justify: JustifyText::Center,
+            ..default()
+        },
         TextColor(Color::WHITE),
         Transform::from_translation(Vec3::new(0.0, 0.0, 10.0)),
         Visibility::Visible,
@@ -259,7 +273,10 @@ fn update_countdown_text(
         let hours = total_secs / 3600;
         let minutes = (total_secs % 3600) / 60;
         let seconds = total_secs % 60;
-        (format!("{:02}:{:02}:{:02}", hours, minutes, seconds), Color::WHITE)
+        (
+            format!("GYoung YouTube Live : \n\t {:02}:{:02}", minutes, seconds),
+            Color::WHITE,
+        )
     } else {
         ("LIVE".to_string(), Color::srgb_u8(0, 255, 128))
     };
