@@ -11,8 +11,8 @@ const TARGET_TIME_STR: &str = "2025-12-31T23:59:59"; // yyyy-mm-ddTHH:MM:SS
 const START_TIME_STR: Option<&str> = None;
 
 // Offscreen Mandelbrot render size
-const MANDEL_WIDTH: u32 = 640;
-const MANDEL_HEIGHT: u32 = 360;
+const MANDEL_WIDTH: u32 = 1280;
+const MANDEL_HEIGHT: u32 = 720;
 
 #[derive(Resource)]
 struct TargetTime(DateTime<Local>);
@@ -129,12 +129,12 @@ fn setup_mandelbrot(
 
     commands.insert_resource(MandelState {
         image: image_handle,
-        start_zoom: 1.0,
+        start_zoom: 0.70,
         min_zoom: 0.000_6, // stop before precision/interior dominates
         zoom: 3.0,
         center: targets[0],
-        fps_timer: Timer::from_seconds(1.0 / 20.0, TimerMode::Repeating), // ~20 FPS updates
-        cycle_timer: Timer::from_seconds(190.0, TimerMode::Repeating), // 90s continuous zoom cycles
+        fps_timer: Timer::from_seconds(1.0 / 80.0, TimerMode::Repeating), // ~20 FPS updates
+        cycle_timer: Timer::from_seconds(490.0, TimerMode::Repeating), // 90s continuous zoom cycles
         targets,
         target_index: 0,
     });
