@@ -50,7 +50,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Standby - Mandelbrot + Countdown".to_string(),
-                resolution: (1280.0, 720.0).into(),
+                resolution: (1920.0, 1080.0).into(),
                 resizable: true,
                 ..default()
             }),
@@ -133,7 +133,7 @@ fn setup_mandelbrot(
         min_zoom: 0.000_6, // stop before precision/interior dominates
         zoom: 3.0,
         center: targets[0],
-        fps_timer: Timer::from_seconds(1.0 / 80.0, TimerMode::Repeating), // ~20 FPS updates
+        fps_timer: Timer::from_seconds(1.0 / 120.0, TimerMode::Repeating), // ~20 FPS updates
         cycle_timer: Timer::from_seconds(490.0, TimerMode::Repeating), // 90s continuous zoom cycles
         targets,
         target_index: 0,
